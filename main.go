@@ -1,12 +1,10 @@
 package main
 
 import (
-	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
-	"io"
 	"log"
 	"math"
 	"math/rand"
@@ -18,33 +16,6 @@ import (
 type questionPair struct {
 	Question string
 	Answer   string
-}
-
-// parseCSVFile will parse a valid csv file with the following format
-// "question","answer"
-func parseCSVFile(filename string) ([]questionPair, error) {
-	var questionPairs []questionPair
-
-	csvFile, err := os.ReadFile(filename)
-	if err != nil {
-		return nil, err
-	}
-
-	csvReader := csv.NewReader(strings.NewReader(string(csvFile)))
-
-	for {
-		record, err := csvReader.Read()
-
-		if err == io.EOF {
-			break
-		} else if err != nil {
-			return nil, err
-		} else {
-			questionPairs = append(questionPairs, questionPair{Question: record[0], Answer: record[1]})
-		}
-	}
-
-	return questionPairs, nil
 }
 
 // parseJSONFile will parse a valid JSON file with the following format:
@@ -69,12 +40,10 @@ func parseJSONFile(filename string) ([]questionPair, error) {
 }
 
 // Accepted sources are:
-// CSV file  - see parseCSVFile() for file format
 // JSON file - see parseJSONFile() for file format
+// @TODO hook into charm kv?
 func parseQuestionSource(filename string) ([]questionPair, error) {
 	switch {
-	case strings.HasSuffix(filename, ".csv"):
-		return parseCSVFile(filename)
 	case strings.HasSuffix(filename, ".json"):
 		return parseJSONFile(filename)
 	default:
@@ -86,17 +55,10 @@ func main() {
 	numQuestionsAsked := 0
 	numCorrectAnswers := 0
 
-	questionSource := flag.String("f", "problems.csv", "csv/json file to read")
-	duration := flag.Int("d", 30, "time in seconds to run quiz for")
+	questionSource := flag.String("f", "cards.json", "json file to read")
 	shuffle := flag.Bool("s", false, "shuffle the deck")
 
 	flag.Parse()
-
-	durationStr := fmt.Sprintf("%ds", *duration)
-	timerDuration, err := time.ParseDuration(durationStr)
-	if err != nil {
-		log.Fatal(err)
-	}
 
 	if questionPairs, err := parseQuestionSource(*questionSource); err != nil {
 		log.Fatal(err)
@@ -109,30 +71,22 @@ func main() {
 			})
 		}
 
-		fmt.Printf("\n\nYou have %s to answer all questions - press enter to begin\n\n", durationStr)
-		fmt.Scanln()
-
-		timer := time.NewTimer(timerDuration)
-		go func() { // seperate threaded "goroutine" function that sits and waits for timer channel to fire
-			<-timer.C
-
-			fmt.Println("\n\nTime's up!!!")
-			outputFinalQuizResults(numQuestionsAsked, numCorrectAnswers)
-		}()
-
 		var userInput = ""
 		for _, question := range questionPairs {
-			fmt.Printf("%s=", question.Question)
+			fmt.Printf("%s\n", question.Question)
 
 			if _, err := fmt.Scanln(&userInput); err == nil { // ignore err, blank input
+
+				isCorrect := "❌"
 				if question.Answer == strings.ToLower(strings.TrimSpace(userInput)) {
 					numCorrectAnswers += 1
+					isCorrect = "✅"
 				}
+				fmt.Printf("Answer: %s (%s)\n", question.Answer, isCorrect)
 			}
 			numQuestionsAsked++
 		}
 
-		fmt.Println("\n\nWell done - you answered all questions in the allowed time!!!")
 		outputFinalQuizResults(numQuestionsAsked, numCorrectAnswers)
 	}
 }
