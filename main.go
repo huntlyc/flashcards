@@ -22,10 +22,12 @@ type questionPair struct {
 }
 
 type model struct {
-	questionPais    []questionPair
-	questionsAsked  int
-	correctAnswers  int
-	currentQuestion int
+	questionPairs      []questionPair
+	userAnswers        []string
+	questionsAsked     int
+	correctAnswers     int
+	currentQuestionIdx int
+	isGameFinished     bool
 
 	textInput textinput.Model
 }
@@ -53,7 +55,6 @@ func parseJSONFile(filename string) ([]questionPair, error) {
 
 // Accepted sources are:
 // JSON file - see parseJSONFile() for file format
-// @TODO hook into charm kv?
 func parseQuestionSource(filename string) ([]questionPair, error) {
 	switch {
 	case strings.HasSuffix(filename, ".json"):
@@ -64,26 +65,28 @@ func parseQuestionSource(filename string) ([]questionPair, error) {
 }
 
 func (m model) Init() tea.Cmd {
-
 	return textinput.Blink
 }
 
 func initialModel(questionPairs []questionPair) model {
 	ti := textinput.New()
-	ti.Placeholder = "..answer"
+	ti.Placeholder = "..your answer"
 	ti.Focus()
 	ti.Width = 100
 
 	return model{
-		questionPais:    questionPairs,
-		questionsAsked:  0,
-		correctAnswers:  0,
-		currentQuestion: 0,
-		textInput:       ti,
+		questionPairs:      questionPairs,
+		userAnswers:        []string{},
+		questionsAsked:     0,
+		correctAnswers:     0,
+		currentQuestionIdx: 0,
+		isGameFinished:     false,
+		textInput:          ti,
 	}
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
 	switch msg := msg.(type) {
 
 	case tea.KeyMsg:
@@ -91,37 +94,53 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.KeyCtrlC:
 			return m, tea.Quit
 		case tea.KeyEnter:
-			if m.currentQuestion > len(m.questionPais) {
+
+			if m.isGameFinished { // restart
+				m.questionsAsked = 0
+				m.correctAnswers = 0
+				m.currentQuestionIdx = 0
+				m.userAnswers = []string{}
+				m.isGameFinished = false
+				m.textInput.SetValue("")
+
 				return m, nil
 			}
 
-			if m.questionPais[m.currentQuestion].Answer == strings.ToLower(strings.TrimSpace(m.textInput.Value())) {
-				m.questionsAsked += 1
+			correctAnswer := m.questionPairs[m.currentQuestionIdx].Answer
+			userAnswer := strings.ToLower(strings.TrimSpace(m.textInput.Value()))
+
+			m.userAnswers = append(m.userAnswers, userAnswer)
+
+			if userAnswer == correctAnswer {
+				m.correctAnswers += 1
 			}
 
-			m.currentQuestion += 1
-			/*
-				                isCorrect := "❌"
-								isCorrect = "✅"
-							//fmt.Printf("Answer: %s (%s)\n", question.Answer, isCorrect)
-			*/
+			m.questionsAsked += 1
+
+			// check end
+			if m.currentQuestionIdx+1 >= len(m.questionPairs) {
+				m.isGameFinished = true
+				return m, nil
+			} else {
+				m.currentQuestionIdx += 1
+				m.textInput.SetValue("")
+			}
 		}
 	}
 
-	return m, nil
+	m.textInput, cmd = m.textInput.Update(msg) // update the textinput with the keypress
+	return m, cmd
 }
 
 func (m model) View() string {
-	return fmt.Sprintf("%s\n\n%s", m.questionPais[m.currentQuestion].Question, m.textInput.View())
-
+	if !m.isGameFinished {
+		return fmt.Sprintf("%s\n\n%s", m.questionPairs[m.currentQuestionIdx].Question, m.textInput.View())
+	} else {
+		return outputFinalQuizResults(m)
+	}
 }
 
 func main() {
-	/*
-		numQuestionsAsked := 0
-		numCorrectAnswers := 0
-	*/
-
 	questionSource := flag.String("f", "cards.json", "json file to read")
 	shuffle := flag.Bool("s", false, "shuffle the deck")
 
@@ -143,30 +162,24 @@ func main() {
 			log.Fatal(err)
 			os.Exit(1)
 		}
-
-		/* ask questions
-		var userInput = ""
-		for _, question := range questionPairs {
-			fmt.Printf("%s\n", question.Question)
-
-			if _, err := fmt.Scanln(&userInput); err == nil { // ignore err, blank input
-
-				isCorrect := "❌"
-				if question.Answer == strings.ToLower(strings.TrimSpace(userInput)) {
-					numCorrectAnswers += 1
-					isCorrect = "✅"
-				}
-				fmt.Printf("Answer: %s (%s)\n", question.Answer, isCorrect)
-			}
-			numQuestionsAsked++
-		}
-		outputFinalQuizResults(numQuestionsAsked, numCorrectAnswers)
-		*/
-
 	}
 }
 
-func outputFinalQuizResults(numQuestionsAsked, numCorrectAnswers int) string {
-	scoreAsPercentage := math.Floor(float64(numCorrectAnswers) / float64(numQuestionsAsked) * 100)
-	return fmt.Sprintf("\n\nYour score was: %d/%d (%.0f%%)\n\n\n", numCorrectAnswers, numQuestionsAsked, scoreAsPercentage)
+func outputFinalQuizResults(m model) string {
+	scorePercentage := math.Floor(float64(m.correctAnswers) / float64(m.questionsAsked) * 100)
+	scoreText := fmt.Sprintf("All done!\nYour score was: %d/%d (%.0f%%)\n", m.correctAnswers, m.questionsAsked, scorePercentage)
+
+	// show correct/incorrect answers
+	answersText := ""
+	for i, qp := range m.questionPairs {
+		if qp.Answer == m.userAnswers[i] {
+			isCorrect := "✅"
+			answersText += fmt.Sprintf("%s\n%s %s \n", qp.Question, qp.Answer, isCorrect)
+		} else {
+			isCorrect := "❌"
+			answersText += fmt.Sprintf("%s\n%s %s (%s)\n", qp.Question, m.userAnswers[i], isCorrect, qp.Answer)
+		}
+	}
+
+	return fmt.Sprintf("%s\n\nScore Card:\n%s\n\nPress Ctrl+C to exit - Enter to restart", scoreText, answersText)
 }

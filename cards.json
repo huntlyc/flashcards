@@ -2,5 +2,9 @@
     {
         "question": "What's the meaning of life?",
         "answer": "42"
+    },
+    {
+        "question": "Whats the number after 4?",
+        "answer": "5"
     }
 ]
