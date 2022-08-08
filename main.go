@@ -14,6 +14,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 type questionPair struct {
@@ -134,7 +135,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m model) View() string {
 	if !m.isGameFinished {
-		return fmt.Sprintf("%s\n\n%s", m.questionPairs[m.currentQuestionIdx].Question, m.textInput.View())
+
+		boldStyle := lipgloss.NewStyle().Bold(true)
+		question := boldStyle.Render(m.questionPairs[m.currentQuestionIdx].Question)
+
+		return fmt.Sprintf("%s\n\n%s", question, m.textInput.View())
 	} else {
 		return outputFinalQuizResults(m)
 	}
@@ -166,20 +171,44 @@ func main() {
 }
 
 func outputFinalQuizResults(m model) string {
-	scorePercentage := math.Floor(float64(m.correctAnswers) / float64(m.questionsAsked) * 100)
-	scoreText := fmt.Sprintf("All done!\nYour score was: %d/%d (%.0f%%)\n", m.correctAnswers, m.questionsAsked, scorePercentage)
+
+	// Lipgloss styles
+	headingStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("#FAFAFA")).
+		Background(lipgloss.Color("#7D56F4")).
+		Padding(0, 1).
+		Margin(1, 0)
+
+	borderedStyle := lipgloss.NewStyle().
+		BorderStyle(lipgloss.NormalBorder()).
+		BorderForeground(lipgloss.Color("#626262")).
+		BorderTop(true).
+		BorderBottom(true)
+
+	helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#626262"))
+	boldStyle := lipgloss.NewStyle().Bold(true)
 
 	// show correct/incorrect answers
-	answersText := ""
+	answersText := headingStyle.Render("Score Card")
 	for i, qp := range m.questionPairs {
+
+		question := boldStyle.Render(qp.Question)
+		answer := boldStyle.Render(qp.Answer)
+
 		if qp.Answer == m.userAnswers[i] {
 			isCorrect := "✅"
-			answersText += fmt.Sprintf("%s\n%s %s \n", qp.Question, qp.Answer, isCorrect)
+			answersText += fmt.Sprintf("\n%s\n%s %s \n", question, answer, isCorrect)
 		} else {
 			isCorrect := "❌"
-			answersText += fmt.Sprintf("%s\n%s %s (%s)\n", qp.Question, m.userAnswers[i], isCorrect, qp.Answer)
+			answersText += fmt.Sprintf("\n%s\n%s %s (%s)\n", question, m.userAnswers[i], isCorrect, answer)
 		}
 	}
 
-	return fmt.Sprintf("%s\n\nScore Card:\n%s\n\nPress Ctrl+C to exit - Enter to restart", scoreText, answersText)
+	scorePercentage := math.Floor(float64(m.correctAnswers) / float64(m.questionsAsked) * 100)
+	scoreText := fmt.Sprintf("Your score was: %d/%d (%.0f%%)", m.correctAnswers, m.questionsAsked, scorePercentage)
+
+	helpText := helpStyle.Render("Press Ctrl+C to exit - Enter to restart")
+
+	return fmt.Sprintf("%s\n%s\n\n%s", answersText, borderedStyle.Render(scoreText), helpText)
 }
