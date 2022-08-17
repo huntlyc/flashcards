@@ -1,9 +1,15 @@
 package main
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
+	"log"
 	"math"
+	"math/rand"
+	"os"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -15,7 +21,7 @@ type QuestionPair struct {
 	Answer   string
 }
 
-type runQuizModel struct {
+type RunQuizModel struct {
 	questionPairs      []QuestionPair
 	userAnswers        []string
 	questionsAsked     int
@@ -26,17 +32,22 @@ type runQuizModel struct {
 	textInput textinput.Model
 }
 
-func (m runQuizModel) Init() tea.Cmd {
-	return textinput.Blink
-}
-
-func NewQuiz(questionPairs []QuestionPair) tea.Model {
+func NewQuiz() *RunQuizModel {
 	ti := textinput.New()
 	ti.Placeholder = "..your answer"
 	ti.Focus()
 	ti.Width = 100
 
-	return runQuizModel{
+	questionPairs, err := parseQuestionSource("cards.json")
+	if err != nil {
+		log.Fatal(err)
+	} else {
+		rand.Seed(time.Now().UnixNano())
+		rand.Shuffle(len(questionPairs), func(i, j int) {
+			questionPairs[i], questionPairs[j] = questionPairs[j], questionPairs[i]
+		})
+	}
+	return &RunQuizModel{
 		questionPairs:      questionPairs,
 		userAnswers:        []string{},
 		questionsAsked:     0,
@@ -47,7 +58,11 @@ func NewQuiz(questionPairs []QuestionPair) tea.Model {
 	}
 }
 
-func (m runQuizModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m RunQuizModel) Init() tea.Cmd {
+	return textinput.Blink
+}
+
+func (m RunQuizModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	switch msg := msg.(type) {
 
@@ -55,6 +70,8 @@ func (m runQuizModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.Type {
 		case tea.KeyCtrlC:
 			return m, tea.Quit
+		case tea.KeyEsc:
+			return SelectModel(0)
 		case tea.KeyEnter:
 
 			if m.isGameFinished { // restart
@@ -94,7 +111,7 @@ func (m runQuizModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m runQuizModel) View() string {
+func (m RunQuizModel) View() string {
 	if !m.isGameFinished {
 
 		boldStyle := lipgloss.NewStyle().Bold(true)
@@ -108,7 +125,7 @@ func (m runQuizModel) View() string {
 	}
 }
 
-func outputFinalQuizResults(m runQuizModel) string {
+func outputFinalQuizResults(m RunQuizModel) string {
 
 	// Lipgloss styles
 	headingStyle := lipgloss.NewStyle().
@@ -146,7 +163,39 @@ func outputFinalQuizResults(m runQuizModel) string {
 	scorePercentage := math.Floor(float64(m.correctAnswers) / float64(m.questionsAsked) * 100)
 	scoreText := fmt.Sprintf("Your score was: %d/%d (%.0f%%)", m.correctAnswers, m.questionsAsked, scorePercentage)
 
-	helpText := helpStyle.Render("Press Ctrl+C to exit - Enter to restart")
+	helpText := helpStyle.Render("Press Ctrl+C to exit - Enter to restart - Escape for main menu")
 
 	return fmt.Sprintf("%s\n%s\n\n%s", answersText, borderedStyle.Render(scoreText), helpText)
+}
+
+// parseJSONFile will parse a valid JSON file with the following format:
+// [
+//  {"question":"Meaning of life"?, "answer": "42"},
+//  ...
+// ]
+func parseJSONFile(filename string) ([]QuestionPair, error) {
+
+	fileContents, err := os.ReadFile(filename)
+	if err != nil {
+		return nil, err
+	}
+
+	var questionPairs []QuestionPair
+	err = json.Unmarshal(fileContents, &questionPairs)
+	if err != nil {
+		return nil, err
+	}
+
+	return questionPairs, nil
+}
+
+// Accepted sources are:
+// JSON file - see parseJSONFile() for file format
+func parseQuestionSource(filename string) ([]QuestionPair, error) {
+	switch {
+	case strings.HasSuffix(filename, ".json"):
+		return parseJSONFile(filename)
+	default:
+		return nil, errors.New("Invalid input type, should be json")
+	}
 }
